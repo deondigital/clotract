@@ -32,23 +32,26 @@
     {:state new-state
      :ledger (vec (conj ledger command))}))
 
+(defn step-n
+  ([commands] (step-n nil commands))
+  ([contract-state commands] (reduce step contract-state commands)))
+
 (comment
-  (step (step {:state {:balance 0}
-               :ledger []}
-              `(deposit {:amount 100}))
-        `(deposit {:amount 50}))
+  (step {:state {:balance 0}
+         :ledger []}
+        `(deposit {:amount 100}))
 
-  (reduce step
-          {:state {:balance 0} :ledger []}
-          `[(deposit {:amount 100})
-            (deposit {:amount 50})])
+  (step-n
+   `[(create-account)
+     (deposit {:amount 100})
+     (deposit {:amount 50})])
 
-  (reduce step
-          {:state {:balance 0} :ledger []}
-          `[(deposit {:amount 100})
-            (deposit {:amount 50})
-            (withdraw {:amount 14000})
-            (withdraw {:amount 1000})])
+  (step-n
+   `[(create-account)
+     (deposit {:amount 100})
+     (deposit {:amount 50})
+     (withdraw {:amount 14000})
+     (withdraw {:amount 1000})])
   )
 
 
@@ -72,4 +75,47 @@
 
   (verify! good)
   (verify! bad)
+  )
+
+;;;; Bank
+
+{"acc1" {:name "Johnny" :balance 100}
+ "acc2" {:name "George" :balance 500}}
+
+(defn add-account [account-number]
+  (fn [state]
+    (assoc state account-number ((create-account) nil))))
+
+(defn cash-deposit [{:keys [account-number] :as args}]
+  (fn [state]
+    (assert (state account-number) "account does not exist")
+    (update state account-number (deposit args))))
+
+(defn cash-withdraw [{:keys [account-number] :as args}]
+  (fn [state]
+    (assert (state account-number) "account does not exist")
+    (update state account-number (withdraw args))))
+
+(comment
+  (verify! (step nil `(add-account ~(name (gensym "acc")))))
+
+  (step-n `[(add-account ~(name (gensym "acc")))])
+
+  (step-n `[(add-account "acc1")
+            (cash-deposit {:account-number "acc1"
+                           :amount 100})
+            (cash-withdraw {:account-number "acc1"
+                            :amount 50})])
+
+  (step-n `[(add-account "acc1")
+            (cash-deposit {:account-number "acc1"
+                           :amount 100})
+            (cash-withdraw {:account-number "acc1"
+                            :amount 150})])
+
+  (step-n `[(add-account "acc1")
+            (cash-deposit {:account-number "acc1"
+                           :amount 100})
+            (cash-withdraw {:account-number "acc2"
+                            :amount 50})])
   )

@@ -1,47 +1,43 @@
 (ns clotract.core)
 
+;;; Commands
+
 (defn withdraw
-  [{:keys [balance] :as state}
-   {:keys [amount]}]
-  (assert (> amount 0) "amount must be positive")
-  (assert (> balance amount) "Amount too high")
-  (assoc state :balance (- balance amount)))
-
-
-(defn deposit
-  [{:keys [balance] :as state}
-   {:keys [amount]}]
-  (assert (> amount 0) "amount must be positive")
-  (assoc state :balance (+ balance amount)))
-
-(comment
-  (withdraw {:balance 100 :name "Johnny"} {:amount 50})
-  (withdraw {:balance 10} {:amount 20})
-  (withdraw {:balance 10} {:amount -1})
-  (deposit {:balance 100} {:amount 50})
-  (deposit {:balance 100} {:amount -50})
-  )
-
-
-(defn withdraw-curry
   [{:keys [amount]}]
   (assert (> amount 0) "amount must be positive")
   (fn [{:keys [balance] :as state}]
     (assert (>= balance amount) "Amount too high")
     (assoc state :balance (- balance amount))))
 
-(defn deposit-curry
+(defn deposit
   [{:keys [amount]}]
   (assert (> amount 0) "amount must be positive")
   (fn [state]
     (update state :balance (partial + amount))))
 
+(defn step [{:keys [state ledger] :as contract-state} command]
+  (let [new-state
+        (try ((eval command) state)
+             (catch Error e
+               (throw (ex-info "Unexpected event"
+                               (assoc contract-state
+                                      :command-exception e)))))]
+    {:state new-state
+     :ledger (conj ledger command)}))
+
 (comment
-  ((withdraw-curry {:amount 10}) {:balance 10})
+  (step (step {:state {:balance 0}
+               :ledger []}
+              `(deposit {:amount 100}))
+        `(deposit {:amount 50}))
 
-
+  (reduce step
+          {:state {:balance 0} :ledger []}
+          `[(deposit {:amount 100})
+            (deposit {:amount 50})
+            (withdraw {:amount 14000})
+            (withdraw {:amount 1000})])
   )
-
 
 (comment
   (def acc (atom {:state {:balance 0}
@@ -54,25 +50,3 @@
     (reset! acc {:state new-state :history new-history}))
   )
 
-;; (def step eval)
-
-;; (defn step [event-list command]
-;;   (try (eval command)
-;;        (catch Exception e (str ))))
-
-;; (comment
-;;   (step `(deposit {:balance 0} {:amount 100}))
-;;   )
-
-(comment
-  (def johnny-account (atom {:name "Johnny B"
-                             :balance 1000}))
-
-  (def withdraw-a-hundred (withdraw-curry {:amount 100}))
-
-  (swap! johnny-account withdraw-a-hundred)
-
-  @johnny-account
-
-  (swap! johnny-account #(withdraw % {:amount -900}))
-  )

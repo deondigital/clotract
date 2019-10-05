@@ -1,4 +1,7 @@
-(ns clotract.core)
+(ns clotract.core
+  (:require
+   [clojure.pprint :as pp]
+   ))
 
 ;;; Commands
 
@@ -198,3 +201,11 @@
         (filter (fn [[_ account]] (< (:balance account) 0)) (:state bank))]
     {:accounts-in-negative negative-accounts
      :total-debt (apply + (map (fn [[_ account]] (:balance account)) negative-accounts))}))
+
+(defn pp-accounts [{:keys [state]}]
+  (pp/print-table
+   (map (fn [[account-number {:keys [balance credit-limit]}]]
+          {"Account number" account-number
+           "Credit limit" credit-limit
+           "Balance" balance})
+        state)))

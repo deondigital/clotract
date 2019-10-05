@@ -86,15 +86,26 @@
   (fn [state]
     (assoc state account-number ((create-account) nil))))
 
+(defn assert-account-exists [state account-number]
+  (assert (state account-number) "account does not exist"))
+
 (defn cash-deposit [{:keys [account-number] :as args}]
   (fn [state]
-    (assert (state account-number) "account does not exist")
+    (assert-account-exists state account-number)
     (update state account-number (deposit args))))
 
 (defn cash-withdraw [{:keys [account-number] :as args}]
   (fn [state]
-    (assert (state account-number) "account does not exist")
+    (assert-account-exists state account-number)
     (update state account-number (withdraw args))))
+
+(defn transfer [{:keys [from-account to-account] :as args}]
+  (fn [state]
+    (assert-account-exists state from-account)
+    (assert-account-exists state to-account)
+    (-> state
+        (update from-account (withdraw args))
+        (update to-account (deposit args)))))
 
 (comment
   (verify! (step nil `(add-account ~(name (gensym "acc")))))
@@ -118,4 +129,12 @@
                            :amount 100})
             (cash-withdraw {:account-number "acc2"
                             :amount 50})])
+
+  (step-n `[(add-account "acc1")
+            (add-account "acc2")
+            (cash-deposit {:account-number "acc1"
+                           :amount 100})
+            (transfer {:from-account "acc1" :to-account "acc2" :amount 50})
+            (transfer {:from-account "acc1" :to-account "acc2" :amount 60})
+            ])
   )

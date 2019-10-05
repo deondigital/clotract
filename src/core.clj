@@ -177,11 +177,24 @@
 
 
 ;;; Analytics
+
+
 (def bank
   (step-n `[(add-account {:account-number "acc1"})
             (add-account {:account-number "acc2"})
             ((on-account deposit) {:account-number "acc1" :amount 100})
-            (transfer {:from-account "acc1" :to-account "acc2" :amount 70})]))
+            (transfer {:from-account "acc1" :to-account "acc2" :amount 70})
+
+            (add-account {:account-number "acc3"})
+            ((on-account set-credit-limit) {:account-number "acc3" :credit-limit 100})
+            ((on-account withdraw) {:account-number "acc3" :amount 50})
+            ]))
 
 (defn total-balance [bank]
   (apply + (map (fn [[_ account]] (:balance account)) (:state bank))))
+
+(defn debt-report [bank]
+  (let [negative-accounts
+        (filter (fn [[_ account]] (< (:balance account) 0)) (:state bank))]
+    {:accounts-in-negative negative-accounts
+     :total-debt (apply + (map (fn [[_ account]] (:balance account)) negative-accounts))}))

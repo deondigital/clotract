@@ -55,11 +55,11 @@
   )
 
 
-(defn verify! [{:keys [state ledger]}]
+(defn verify [{:keys [state ledger] :as obj}]
   (let [derived-state (:state (reduce step {} ledger))]
-    (if-not
-        (= state
+    (if (= state
            derived-state)
+      obj
       (throw (ex-info "Could not validate contract object"
                       {:expected-state state
                        :derived-state derived-state})))))
@@ -73,8 +73,8 @@
 
   (def bad (update-in good [:state :balance] #(- % 1000)))
 
-  (verify! good)
-  (verify! bad)
+  (verify good)
+  (verify bad)
   )
 
 ;;;; Bank
@@ -84,6 +84,7 @@
 
 (defn add-account [account-number]
   (fn [state]
+    (assert (not (get state account-number)) "account number in use")
     (assoc state account-number ((create-account) nil))))
 
 (defn assert-account-exists [state account-number]
@@ -108,7 +109,7 @@
         (update to-account (deposit args)))))
 
 (comment
-  (verify! (step nil `(add-account ~(name (gensym "acc")))))
+  (verify (step nil `(add-account ~(name (gensym "acc")))))
 
   (step-n `[(add-account ~(name (gensym "acc")))])
 
@@ -118,18 +119,21 @@
             (cash-withdraw {:account-number "acc1"
                             :amount 50})])
 
+  ;; should fail
   (step-n `[(add-account "acc1")
             (cash-deposit {:account-number "acc1"
                            :amount 100})
             (cash-withdraw {:account-number "acc1"
                             :amount 150})])
 
+  ;; should fail
   (step-n `[(add-account "acc1")
             (cash-deposit {:account-number "acc1"
                            :amount 100})
             (cash-withdraw {:account-number "acc2"
                             :amount 50})])
 
+  ;; should fail
   (step-n `[(add-account "acc1")
             (add-account "acc2")
             (cash-deposit {:account-number "acc1"
@@ -137,4 +141,8 @@
             (transfer {:from-account "acc1" :to-account "acc2" :amount 50})
             (transfer {:from-account "acc1" :to-account "acc2" :amount 60})
             ])
+
+  ;; should fail
+  (step-n `[(add-account "acc1")
+            (add-account "acc1")])
   )

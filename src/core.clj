@@ -3,11 +3,13 @@
    [clojure.pprint :as pp]
    ))
 
-;;; Commands
+;;;; Account
+
+;;; commands
 
 (defn create-account []
   (fn [state]
-    (assert (= nil state) "Initial state must be nil")
+    (assert (= nil state) "initial state must be nil")
     {:balance 0}))
 
 (defn set-credit-limit [{:keys [credit-limit]}]
@@ -19,7 +21,8 @@
   [{:keys [amount]}]
   (assert (> amount 0) "amount must be positive")
   (fn [{:keys [balance credit-limit] :as state}]
-    (assert (>= (+ balance (or credit-limit 0)) amount) "Amount too high")
+    (assert (>= (+ balance (or credit-limit 0)) amount)
+            "no coverage on account")
     (assoc state :balance (- balance amount))))
 
 (defn deposit
@@ -65,7 +68,6 @@
      (withdraw {:amount 1000})])
   )
 
-
 (defn verify [{:keys [state ledger] :as obj}]
   (let [derived-state (:state (reduce step {} ledger))]
     (if (= state
@@ -77,10 +79,10 @@
 
 (comment
   (def good
-    (reduce step {}
-            `[(create-account)
-              (deposit {:amount 60})
-              (deposit {:amount 40})]))
+    (step-n
+     `[(create-account)
+       (deposit {:amount 60})
+       (deposit {:amount 40})]))
 
   (def bad (update-in good [:state :balance] #(- % 1000)))
 
@@ -90,8 +92,8 @@
 
 ;;;; Bank
 
-{"acc1" {:name "Johnny" :balance 100}
- "acc2" {:name "George" :balance 500}}
+{"acc1" {:balance 100}
+ "acc2" {:balance -500 :credit-limit 1000}}
 
 (defn add-account [{:keys [account-number]}]
   (fn [state]
@@ -107,20 +109,11 @@
       (assert-account-exists state account-number)
       (update state account-number (account-command args)))))
 
-(defn set-account-credit-limit [{:keys [account-number] :as args}]
-  (fn [state]
-    (assert-account-exists state account-number)
-    (update state account-number (set-credit-limit args))))
+(def set-account-credit-limit (on-account set-credit-limit))
 
-(defn cash-deposit [{:keys [account-number] :as args}]
-  (fn [state]
-    (assert-account-exists state account-number)
-    (update state account-number (deposit args))))
+(def cash-deposit (on-account deposit))
 
-(defn cash-withdraw [{:keys [account-number] :as args}]
-  (fn [state]
-    (assert-account-exists state account-number)
-    (update state account-number (withdraw args))))
+(def cash-withdraw (on-account withdraw))
 
 (defn transfer [{:keys [from-account to-account] :as args}]
   (fn [state]
@@ -129,6 +122,19 @@
     (-> state
         (update from-account (withdraw args))
         (update to-account (deposit args)))))
+
+(comment
+  (go `(add-account {:account-number "acc1"}))
+  (go `(cash-deposit {:account-number "acc1" :amount 100}))
+
+  (go `(add-account {:account-number "acc2"}))
+  (go `(transfer {:from-account "acc1" :to-account "acc2" :amount 70}))
+
+  (go `(set-account-credit-limit {:account-number "acc1" :credit-limit 1000}))
+  (go `(cash-withdraw {:account-number "acc1" :amount 700}))
+
+  (pp-accounts @bank)
+  )
 
 (comment
   (verify (step nil `(add-account {:account-number ~(name (gensym "acc"))})))
@@ -148,29 +154,8 @@
             (cash-withdraw {:account-number "acc1"
                             :amount 150})])
 
-  ;; should fail
   (step-n `[(add-account {:account-number "acc1"})
-            (cash-deposit {:account-number "acc1"
-                           :amount 100})
-            (cash-withdraw {:account-number "acc2"
-                            :amount 50})])
-
-  ;; should fail
-  (step-n `[(add-account {:account-number "acc1"})
-            (add-account {:account-number "acc2"})
-            (cash-deposit {:account-number "acc1"
-                           :amount 100})
-            (transfer {:from-account "acc1" :to-account "acc2" :amount 50})
-            (transfer {:from-account "acc1" :to-account "acc2" :amount 60})
-            ])
-
-  ;; should fail
-  (step-n `[(add-account {:account-number "acc1"})
-            (add-account {:account-number "acc1"})])
-
-
-  (step-n `[(add-account {:account-number "acc1"})
-            ((on-account set-credit-limit) {:account-number "acc1" :credit-limit 100})])
+            (set-account-credit-limit {:account-number "acc1" :credit-limit 100})])
 
   (step-n `[(add-account {:account-number "acc1"})
             (set-account-credit-limit {:account-number "acc1" :credit-limit 100})
@@ -182,17 +167,6 @@
 ;;; Analytics
 
 
-(def bank
-  (step-n `[(add-account {:account-number "acc1"})
-            (add-account {:account-number "acc2"})
-            ((on-account deposit) {:account-number "acc1" :amount 100})
-            (transfer {:from-account "acc1" :to-account "acc2" :amount 70})
-
-            (add-account {:account-number "acc3"})
-            ((on-account set-credit-limit) {:account-number "acc3" :credit-limit 100})
-            ((on-account withdraw) {:account-number "acc3" :amount 50})
-            ]))
-
 (defn total-balance [bank]
   (apply + (map (fn [[_ account]] (:balance account)) (:state bank))))
 
@@ -201,6 +175,21 @@
         (filter (fn [[_ account]] (< (:balance account) 0)) (:state bank))]
     {:accounts-in-negative negative-accounts
      :total-debt (apply + (map (fn [[_ account]] (:balance account)) negative-accounts))}))
+
+
+(comment
+  (total-balance @bank)
+  (debt-report @bank)
+  )
+;;; presentation
+
+(defn step-state! [ref]
+  (fn [command]
+    (swap! ref #(step % command))))
+
+(def bank (atom nil))
+
+(def go (step-state! bank))
 
 (defn pp-accounts [{:keys [state]}]
   (pp/print-table
